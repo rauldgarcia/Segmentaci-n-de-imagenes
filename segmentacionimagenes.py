@@ -3,6 +3,7 @@ from email.mime import image
 from re import M
 from sys import maxunicode
 import numpy as np
+import cupy as cp
 import cv2
 import random
 import math
@@ -13,21 +14,12 @@ from mpl_toolkits.mplot3d import Axes3D
 import time
 from scipy.special import expit
 from scipy.stats import multivariate_normal
+import numba
+from numba import njit, prange
 inicio=time.time()
 
-#Transpuesta de matriz
-def transpose(matrix):
-        
-    result = [[None for i in range(len(matrix))] for j in range(len(matrix[0]))]
-    
-    for i in range(len(matrix[0])):
-        for j in range(len(matrix)):
-            result[i][j] = matrix[j][i]
-            
-    return result
-
 #Carga de imagen
-imagen = cv2.imread('imagen1.jpg')
+imagen = cv2.imread('imagen1.jpg',1)
 #cv2.imshow('imagen',imagen)
 resolucionx=imagen.shape[1]
 resoluciony=imagen.shape[0]
@@ -37,48 +29,63 @@ print('Y:',resoluciony)
 print("\nEl total de pixeles es:")
 print(resolucionx*resoluciony)
 
+#Creacion de arrays r,g,b
+vr=cp.zeros((resoluciony,resolucionx))
+vg=cp.zeros((resoluciony,resolucionx))
+vb=cp.zeros((resoluciony,resolucionx))
+
+@njit(parallel=True)
+def color (image):
+    for y in prange(resoluciony):
+        for x in prange(resolucionx):
+            (b, g, r) = image[y, x]
+            vr[y][x]=r/255
+            vg[y][x]=g/255
+            vb[y][x]=b/255
+
+    return vr,vg,vb
+
 #creación de vector medio aleatorio y matriz de covarianza aleatoria y lambdas
-mu1=([random.random(), random.random(), random.random()])
-mu2=([random.random(), random.random(), random.random()])
-mu3=([random.random(), random.random(), random.random()])
+vr,vg,vb=color(imagen)
+mu1=cp.array([random.random(), random.random(), random.random()])
+mu2=cp.array([random.random(), random.random(), random.random()])
+mu3=cp.array([random.random(), random.random(), random.random()])
 lambda1=0.33+(random.randint(-9,9)/100)
 lambda2=0.33+(random.randint(-9,9)/100)
 lambda3=1-lambda1-lambda2
-sigma1=np.array([
+sigma1=cp.array([
     [0.93572708, 0.37072349, 0.17011359],
     [0.37072349, 0.87168998, 0.2964515 ],
     [0.17011359, 0.2964515,  0.51052869]
 ])
-sigma2=np.array([
+sigma2=cp.array([
     [0.93572708, 0.37072349, 0.17011359],
     [0.37072349, 0.87168998, 0.2964515 ],
     [0.17011359, 0.2964515,  0.51052869]
 ])
-sigma3=np.array([
+sigma3=cp.array([
     [0.9500897, 0.29943573, 0.68852249],
     [0.29943573, 0.0980334, 0.24556276],
     [0.68852249, 0.24556276, 0.76094257]
 ])
 
-
 #prints
-print(mu1)
-print(mu2)
-print(mu3)
+print(mu1.shape)
+print(mu2.shape)
+print(mu3.shape)
 print(lambda1)
 print(lambda2)
 print(lambda3)
-print(sigma1)
-print(sigma2)
-print(sigma3)
-
+print(sigma1.shape)
+print(sigma2.shape)
+print(sigma3.shape)
 
 #inicio de iteraciones
-for i in range(5):
+for i in range(1):
 
-    mrik1=np.zeros((resoluciony,resolucionx))
-    mrik2=np.zeros((resoluciony,resolucionx))
-    mrik3=np.zeros((resoluciony,resolucionx))
+    mrik1=cp.zeros((resoluciony,resolucionx))
+    mrik2=cp.zeros((resoluciony,resolucionx))
+    mrik3=cp.zeros((resoluciony,resolucionx))
     sumrik1=0
     sumrik2=0
     sumrik3=0
@@ -96,16 +103,13 @@ for i in range(5):
     sumrik3xg=0
     sumrik3xb=0
 
-
     #calculo de rik
     for y in range(resoluciony):
         for x in range(resolucionx):
-            (b, g, r) = imagen[y, x]
-            rgb=np.array([r,g,b])
-            rgb=rgb/255;
-            n1=lambda1*multivariate_normal.pdf(rgb,mu1,sigma1)
-            n2=lambda2*multivariate_normal.pdf(rgb,mu2,sigma2)
-            n3=lambda3*multivariate_normal.pdf(rgb,mu3,sigma3)
+            rgb=cp.array([vr[y][x],vg[y][x],vb[y][x]])
+            n1=lambda1*multivariate_normal.pdf(rgb.get(),mu1.get(),sigma1.get())
+            n2=lambda2*multivariate_normal.pdf(rgb.get(),mu2.get(),sigma2.get())
+            n3=lambda3*multivariate_normal.pdf(rgb.get(),mu3.get(),sigma3.get())
             rik1=n1/(n1+n2+n3)
             rik2=n2/(n1+n2+n3)
             rik3=n3/(n1+n2+n3)
@@ -116,15 +120,15 @@ for i in range(5):
             sumrik2+=rik2
             sumrik3+=rik3
             sumriks+=rik1+rik2+rik3
-            sumrik1xr+=(rik1*(r/255))
-            sumrik1xg+=(rik1*(g/255))
-            sumrik1xb+=(rik1*(b/255))
-            sumrik2xr+=(rik2*(r/255))
-            sumrik2xg+=(rik2*(g/255))
-            sumrik2xb+=(rik2*(b/255))
-            sumrik3xr+=(rik3*(r/255))
-            sumrik3xg+=(rik3*(g/255))
-            sumrik3xb+=(rik3*(b/255))
+            sumrik1xr+=(rik1*(vr[y][x]))
+            sumrik1xg+=(rik1*(vg[y][x]))
+            sumrik1xb+=(rik1*(vb[y][x]))
+            sumrik2xr+=(rik2*(vr[y][x]))
+            sumrik2xg+=(rik2*(vg[y][x]))
+            sumrik2xb+=(rik2*(vb[y][x]))
+            sumrik3xr+=(rik3*(vr[y][x]))
+            sumrik3xg+=(rik3*(vg[y][x]))
+            sumrik3xb+=(rik3*(vb[y][x]))
 
     #calculo de lambdas
     lambda1=sumrik1/sumriks
@@ -149,15 +153,13 @@ for i in range(5):
     #calculo de sigmas
     for y in range(resoluciony):
         for x in range(resolucionx):
-            (b, g, r) = imagen[y, x]
-            rgb=np.array([[r,g,b]])
-            rgb=rgb/255;
+            rgb=cp.array([vr[y][x],vg[y][x],vb[y][x]])
             rgb_mu1=rgb-mu1
             rgb_mu2=rgb-mu2
             rgb_mu3=rgb-mu3
-            rgb_mu1t=transpose(rgb_mu1)
-            rgb_mu2t=transpose(rgb_mu2)
-            rgb_mu3t=transpose(rgb_mu3)
+            rgb_mu1t=cp.transpose(rgb_mu1.reshape(1,3))
+            rgb_mu2t=cp.transpose(rgb_mu2.reshape(1,3))
+            rgb_mu3t=cp.transpose(rgb_mu3.reshape(1,3))
             rik1xmu1=mrik1[y][x]*rgb_mu1*rgb_mu1t
             rik2xmu2=mrik2[y][x]*rgb_mu2*rgb_mu2t
             rik3xmu3=mrik3[y][x]*rgb_mu3*rgb_mu3t
@@ -171,38 +173,35 @@ for i in range(5):
 
 #prints
 print("Datos nuevos")
-print(mu1)
-print(mu2)
-print(mu3)
+print(mu1.shape)
+print(mu2.shape)
+print(mu3.shape)
 print(lambda1)
 print(lambda2)
 print(lambda3)
-print(sigma1)
-print(sigma2)
-print(sigma3)
+print(sigma1.shape)
+print(sigma2.shape)
+print(sigma3.shape)
 
 for y in range(resoluciony):
         for x in range(resolucionx):
-            (b, g, r) = imagen[y, x]
-            rgb=np.array([[r,g,b]])
-            rgb=rgb/255;
-            n1=lambda1*multivariate_normal.pdf(rgb,mu1,sigma1)
-            n2=lambda2*multivariate_normal.pdf(rgb,mu2,sigma2)
-            n3=lambda3*multivariate_normal.pdf(rgb,mu3,sigma3)
+            rgb=cp.array([vr[y][x],vg[y][x],vb[y][x]])
+            n1=lambda1*multivariate_normal.pdf(rgb.get(),mu1.get(),sigma1.get())
+            n2=lambda2*multivariate_normal.pdf(rgb.get(),mu2.get(),sigma2.get())
+            n3=lambda3*multivariate_normal.pdf(rgb.get(),mu3.get(),sigma3.get())
             
             if n1>n2 and n1 >n3:
-                imagen[y, x] = (mu1[2]*255, mu1[1]*255, mu1[0]*255)
+                imagen[y, x] = (mu1[2].get()*255, mu1[1].get()*255, mu1[0].get()*255)
 
             if n2>n1 and n2>n3:
-                imagen[y, x] = (mu2[2]*255, mu2[1]*255, mu2[0]*255) 
+                imagen[y, x] = (mu2[2].get()*255, mu2[1].get()*255, mu2[0].get()*255) 
 
             if n3>n1 and n3>n2:
-                imagen[y, x] = (mu2[2]*255, mu2[1]*255, mu2[0]*255) 
+                imagen[y, x] = (mu2[2].get()*255, mu2[1].get()*255, mu2[0].get()*255) 
 
-
-cv2.namedWindow('imagen')
-cv2.imshow('imagen',imagen)
-cv2.waitKey(0)
 fin=time.time()
 print("El tiempo de ejecución es:")
 print(fin-inicio)
+cv2.namedWindow('imagen')
+cv2.imshow('imagen',imagen)
+cv2.waitKey(0)
