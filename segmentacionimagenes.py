@@ -18,6 +18,54 @@ import numba
 from numba import njit, prange
 inicio=time.time()
 
+#funcion que cambia color de imagen original
+@njit(parallel=True)
+def acimagen(imagen,mrik1,mrik2,mrik3,mu1,mu2,mu3):
+
+    global resoluciony
+    global resolucionx
+
+    for y in prange(resoluciony):
+            for x in prange(resolucionx):
+
+                n1=mrik1[y][x]
+                n2=mrik2[y][x]
+                n3=mrik3[y][x]
+                
+                if n1>n2 and n1 >n3:
+                    imagen[y, x] = (mu1[2]*255, mu1[1]*255, mu1[0]*255)
+
+                if n2>n1 and n2>n3:
+                    imagen[y, x] = (mu2[2]*255, mu2[1]*255, mu2[0]*255) 
+
+                if n3>n1 and n3>n2:
+                    imagen[y, x] = (mu2[2]*255, mu2[1]*255, mu2[0]*255) 
+
+    return imagen
+
+#funcion que extrae matriz de colores
+@njit(parallel=True)
+def color(v):
+
+    global cont
+    global resoluciony
+    global resolucionx
+
+    for y in prange(resoluciony):
+        for x in prange(resolucionx):
+            (b, g, r) = imagen[y, x]
+            
+            if cont==1:
+                v[y][x]=r/255
+
+            elif cont==2:
+                v[y][x]=g/255
+
+            elif cont==3:
+                v[y][x]=b/255
+
+    return v
+
 #Carga de imagen
 imagen = cv2.imread('imagen1.jpg',1)
 #cv2.imshow('imagen',imagen)
@@ -30,29 +78,26 @@ print("\nEl total de pixeles es:")
 print(resolucionx*resoluciony)
 
 #Creacion de arrays r,g,b
-vr=cp.zeros((resoluciony,resolucionx))
-vg=cp.zeros((resoluciony,resolucionx))
-vb=cp.zeros((resoluciony,resolucionx))
+vr=np.zeros((resoluciony,resolucionx))
+vg=np.zeros((resoluciony,resolucionx))
+vb=np.zeros((resoluciony,resolucionx))
 
-@njit(parallel=True)
-def color (image):
-    for y in prange(resoluciony):
-        for x in prange(resolucionx):
-            (b, g, r) = image[y, x]
-            vr[y][x]=r/255
-            vg[y][x]=g/255
-            vb[y][x]=b/255
-
-    return vr,vg,vb
+cont=1
+vr=color(vr)
+cont+=1
+vg=color(vg)
+cont+=1
+vb=color(vb)
 
 #creación de vector medio aleatorio y matriz de covarianza aleatoria y lambdas
-vr,vg,vb=color(imagen)
 mu1=cp.array([random.random(), random.random(), random.random()])
 mu2=cp.array([random.random(), random.random(), random.random()])
 mu3=cp.array([random.random(), random.random(), random.random()])
-lambda1=0.33+(random.randint(-9,9)/100)
-lambda2=0.33+(random.randint(-9,9)/100)
+
+lambda1=0.33+(random.randint(-5,5)/100)
+lambda2=0.33+(random.randint(-5,5)/100)
 lambda3=1-lambda1-lambda2
+
 sigma1=cp.array([
     [0.93572708, 0.37072349, 0.17011359],
     [0.37072349, 0.87168998, 0.2964515 ],
@@ -70,15 +115,15 @@ sigma3=cp.array([
 ])
 
 #prints
-print(mu1.shape)
-print(mu2.shape)
-print(mu3.shape)
+print(mu1)
+print(mu2)
+print(mu3)
 print(lambda1)
 print(lambda2)
 print(lambda3)
-print(sigma1.shape)
-print(sigma2.shape)
-print(sigma3.shape)
+print(sigma1)
+print(sigma2)
+print(sigma3)
 
 #inicio de iteraciones
 for i in range(1):
@@ -173,31 +218,26 @@ for i in range(1):
 
 #prints
 print("Datos nuevos")
-print(mu1.shape)
-print(mu2.shape)
-print(mu3.shape)
+print(mu1)
+print(mu2)
+print(mu3)
 print(lambda1)
 print(lambda2)
 print(lambda3)
-print(sigma1.shape)
-print(sigma2.shape)
-print(sigma3.shape)
+print(sigma1)
+print(sigma2)
+print(sigma3)
 
-for y in range(resoluciony):
-        for x in range(resolucionx):
-            rgb=cp.array([vr[y][x],vg[y][x],vb[y][x]])
-            n1=lambda1*multivariate_normal.pdf(rgb.get(),mu1.get(),sigma1.get())
-            n2=lambda2*multivariate_normal.pdf(rgb.get(),mu2.get(),sigma2.get())
-            n3=lambda3*multivariate_normal.pdf(rgb.get(),mu3.get(),sigma3.get())
-            
-            if n1>n2 and n1 >n3:
-                imagen[y, x] = (mu1[2].get()*255, mu1[1].get()*255, mu1[0].get()*255)
-
-            if n2>n1 and n2>n3:
-                imagen[y, x] = (mu2[2].get()*255, mu2[1].get()*255, mu2[0].get()*255) 
-
-            if n3>n1 and n3>n2:
-                imagen[y, x] = (mu2[2].get()*255, mu2[1].get()*255, mu2[0].get()*255) 
+fin=time.time()
+print("El tiempo de ejecución es:")
+print(fin-inicio)
+mu1=mu1.get()
+mu2=mu2.get()
+mu3=mu3.get()
+mrik1=mrik1.get()
+mrik2=mrik2.get()
+mrik3=mrik3.get()
+acimagen(imagen,mrik1,mrik2,mrik3,mu1,mu2,mu3)
 
 fin=time.time()
 print("El tiempo de ejecución es:")
